@@ -1,0 +1,81 @@
+name: Full Infra + App Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ap-south-1
+  BUCKET_NAME: my-tf-state-bucket-rex-2025
+  DYNAMODB_TABLE: my-tf-lock-table-rex-2025
+  TF_STATE_KEY: terraform.tfstate
+  ECR_REPOSITORY: jokes-app
+  IMAGE_TAG: latest
+  CLUSTER_NAME: jokes-cluster
+  SERVICE_NAME: jokes-service
+  CONTAINER_NAME: jokes-app
+
+jobs:
+  deploy:
+    name: Provision Infra + Deploy App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create S3 Bucket and DynamoDB if not exist
+        run: |
+          if ! aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null; then
+            echo "Creating S3 bucket..."
+            aws s3api create-bucket --bucket $BUCKET_NAME --region $AWS_REGION --create-bucket-configuration LocationConstraint=$AWS_REGION
+          else
+            echo "S3 bucket already exists."
+          fi
+
+          if ! aws dynamodb describe-table --table-name $DYNAMODB_TABLE 2>/dev/null; then
+            echo "Creating DynamoDB table..."
+            aws dynamodb create-table \
+              --table-name $DYNAMODB_TABLE \
+              --attribute-definitions AttributeName=LockID,AttributeType=S \
+              --key-schema AttributeName=LockID,KeyType=HASH \
+              --provisioned-throughput ReadCapacityUnits=1,WriteCapacityUnits=1
+          else
+            echo "DynamoDB table already exists."
+          fi
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+
+      - name: Log in to ECR
+        id: login-ecr
+        run: |
+          aws ecr get-login-password --region $AWS_REGION | \
+          docker login --username AWS --password-stdin "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+      - name: Build and Push Docker Image
+        run: |
+          IMAGE_URI=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}
+          docker build -t $IMAGE_URI "./Web-App (Jokes Site)"
+          docker push $IMAGE_URI
+
+      - name: Update ECS Service
+        run: |
+          aws ecs update-service \
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME \
+            --force-new-deployment
