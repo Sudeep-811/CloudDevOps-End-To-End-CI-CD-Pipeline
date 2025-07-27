@@ -22,9 +22,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1) Checkout & AWS Credentials
-    - name: Checkout code
-      uses: actions/checkout@v3
+    # 1) Checkout & AWS Creds
+    - uses: actions/checkout@v3
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
@@ -33,16 +32,13 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region:            ${{ env.AWS_REGION }}
 
-    # 2) Bootstrap Terraform Backend via AWS CLI
+    # 2) Bootstrap backend via AWS CLI
     - name: Ensure S3 State Bucket exists
       run: |
         if ! aws s3api head-bucket --bucket "$TF_BUCKET" 2>/dev/null; then
-          aws s3api create-bucket \
-            --bucket "$TF_BUCKET" \
-            --region "$AWS_REGION" \
+          aws s3api create-bucket --bucket "$TF_BUCKET" --region "$AWS_REGION" \
             --create-bucket-configuration LocationConstraint="$AWS_REGION"
-          aws s3api put-bucket-versioning \
-            --bucket "$TF_BUCKET" \
+          aws s3api put-bucket-versioning --bucket "$TF_BUCKET" \
             --versioning-configuration Status=Enabled
         fi
 
@@ -72,7 +68,7 @@ jobs:
           -backend-config="region=$AWS_REGION" \
           -backend-config="dynamodb_table=$TF_DDB_TABLE"
 
-    # 5) Auto‑import existing resources into state
+    # 5) Auto‑import existing resources
     - name: Auto‑import existing resources
       working-directory: Infrastructure
       run: |
@@ -83,20 +79,20 @@ jobs:
           AWS_CMD="$2"
           if ! terraform state list | grep -Fxq "$ADDRESS"; then
             RESOURCE_ID=$(bash -c "$AWS_CMD" 2>/dev/null || echo "")
-            if [ -n "$RESOURCE_ID" ]; then
+            if [ -n "$RESOURCE_ID" ] && [ "$RESOURCE_ID" != "None" ]; then
               echo "Importing $ADDRESS => $RESOURCE_ID"
               terraform import "$ADDRESS" "$RESOURCE_ID"
             else
-              echo "AWS resource for $ADDRESS not found; skipping import"
+              echo "Skipping import of $ADDRESS (not found in AWS)"
             fi
           else
             echo "$ADDRESS already in state; skipping import"
           fi
         }
 
-        # ECR repository — import by name, not URI
+        # ECR repository (import by name)
         auto_import aws_ecr_repository.app_ecr_repo \
-          "echo ${APP_NAME}"
+          "echo $APP_NAME"
 
         # ECS task execution role
         auto_import aws_iam_role.ecs_task_execution_role \
@@ -110,9 +106,9 @@ jobs:
         auto_import aws_lb_target_group.app_tg \
           "aws elbv2 describe-target-groups --names ${APP_NAME}-tg --query 'TargetGroups[0].TargetGroupArn' --output text"
 
-        # CloudWatch Log Group
+        # CloudWatch Log Group (import by exact name if it exists)
         auto_import aws_cloudwatch_log_group.ecs_log_group \
-          "echo /ecs/${APP_NAME}"
+          "aws logs describe-log-groups --log-group-name-prefix /ecs/${APP_NAME} --query \"logGroups[?logGroupName=='/ecs/${APP_NAME}'].logGroupName | [0]\" --output text"
 
         # IAM logging policy
         auto_import aws_iam_policy.ecs_logging_policy \
@@ -123,17 +119,16 @@ jobs:
       working-directory: Infrastructure
       run: terraform apply -auto-approve
 
-    # 7) Log in to Amazon ECR
+    # 7) Log in to ECR
     - name: Log in to Amazon ECR
       uses: aws-actions/amazon-ecr-login@v2
 
-    # 8) Build, Tag & Push Docker Image
+    # 8) Build & Push Docker Image
     - name: Build, Tag & Push Docker Image
       working-directory: "Web-App (Jokes Site)"
       run: |
         ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
         IMAGE_URI="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
-        echo "Pushing image $IMAGE_URI"
         docker build -t $IMAGE_URI .
         docker push $IMAGE_URI
 
