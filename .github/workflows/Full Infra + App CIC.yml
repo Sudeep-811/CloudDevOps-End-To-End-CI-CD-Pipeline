@@ -61,7 +61,7 @@ jobs:
 
     # 4) Terraform Init & Apply (Main Infra)
     - name: Terraform Init & Apply
-      working-directory: Infrastructure/Main\ Infra.Terraform
+      working-directory: Infrastructure
       run: |
         terraform init \
           -backend-config="bucket=$TF_BUCKET" \
