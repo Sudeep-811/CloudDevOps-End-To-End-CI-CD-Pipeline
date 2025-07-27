@@ -5,6 +5,7 @@ provider "aws" {
 # Bucket
 resource "aws_s3_bucket" "tf_state-rex-2025" {
   bucket = var.state_bucket_name
+  force_destroy = true
   tags   = { Name = "${var.app_name}-tf-state" }
 }
 
