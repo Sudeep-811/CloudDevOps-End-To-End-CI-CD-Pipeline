@@ -28,7 +28,7 @@ variable "private_subnets" {
 
 
 
-variable "app_name" {
+variable "web_app_name" {
   type        = string
   description = "Name of your application"
   default     = "jokes-app"
