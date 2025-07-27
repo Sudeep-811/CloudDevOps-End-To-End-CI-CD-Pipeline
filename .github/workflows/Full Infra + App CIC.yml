@@ -94,9 +94,9 @@ jobs:
           fi
         }
 
-        # ECR repository
+        # ECR repository — import by name, not URI
         auto_import aws_ecr_repository.app_ecr_repo \
-          "aws ecr describe-repositories --repository-names $APP_NAME --query 'repositories[0].repositoryUri' --output text"
+          "echo ${APP_NAME}"
 
         # ECS task execution role
         auto_import aws_iam_role.ecs_task_execution_role \
