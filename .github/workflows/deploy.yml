@@ -1,85 +1,40 @@
-name: CI/CD Pipeline - Deploy to ECS Fargate
+name: Build and Deploy to ECS
 
 on:
   push:
-    branches:
-      - main
-
-env:
-  AWS_REGION: ap-south-1
-  ECR_REPOSITORY: jokes-app
-  ECS_CLUSTER: jokes-cluster
-  ECS_SERVICE: jokes-service
-  CONTAINER_NAME: jokes-app
+    paths:
+      - 'Web-App (Jokes Site)/**'
 
 jobs:
   deploy:
-    name: Build, Push to ECR, and Deploy to ECS
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Web-App\ \(Jokes Site\)
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Configure AWS credentials
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ap-south-1
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Extract AWS Account ID
-        id: aws_account
+      - name: Build and Push Docker Image
         run: |
-          echo "ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> "$GITHUB_ENV"
-
-      - name: Build, Tag, and Push Docker image to ECR
-        run: |
-          IMAGE_URI=${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
+          IMAGE_URI=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com/jokes-app:latest
           docker build -t $IMAGE_URI "./Web-App (Jokes Site)"
           docker push $IMAGE_URI
 
-      - name: Register new ECS task definition revision
-        id: task-def
-        run: |
-          TASK_DEF_ARN=$(aws ecs register-task-definition \
-            --family $ECS_SERVICE \
-            --network-mode awsvpc \
-            --requires-compatibilities FARGATE \
-            --cpu "256" \
-            --memory "512" \
-            --execution-role-arn arn:aws:iam::<your-account-id>:role/ecsTaskExecutionRole \
-            --container-definitions "[
-              {
-                \"name\": \"$CONTAINER_NAME\",
-                \"image\": \"${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest\",
-                \"essential\": true,
-                \"portMappings\": [
-                  {
-                    \"containerPort\": 5000,
-                    \"hostPort\": 5000
-                  }
-                ],
-                \"logConfiguration\": {
-                  \"logDriver\": \"awslogs\",
-                  \"options\": {
-                    \"awslogs-group\": \"/ecs/$ECS_SERVICE\",
-                    \"awslogs-region\": \"$AWS_REGION\",
-                    \"awslogs-stream-prefix\": \"$CONTAINER_NAME\"
-                  }
-                }
-              }
-            ]" \
-            --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
-
-      - name: Deploy new task definition to ECS Service
+      - name: Deploy to ECS
         run: |
           aws ecs update-service \
-            --cluster $ECS_CLUSTER \
-            --service $ECS_SERVICE \
-            --task-definition ${{ env.TASK_DEF_ARN }} \
+            --cluster jokes-cluster \
+            --service jokes-service \
             --force-new-deployment
