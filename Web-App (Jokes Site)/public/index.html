@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JokeMaster - Hilarious Jokes Collection</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="logo">🎭 JokeMaster</h1>
+            <p class="subtitle">Get ready to laugh until your sides hurt!</p>
+        </div>
+
+        <div class="category-selector">
+            <button class="category-btn active" data-category="all">All Jokes</button>
+            <button class="category-btn" data-category="programming">Programming</button>
+            <button class="category-btn" data-category="dad">Dad Jokes</button>
+            <button class="category-btn" data-category="puns">Puns</button>
+            <button class="category-btn" data-category="oneliners">One-liners</button>
+            <button class="category-btn" data-category="knock-knock">Knock Knock</button>
+        </div>
+
+        <div class="joke-container">
+            <div class="joke-card" id="jokeCard">
+                <div class="joke-text" id="jokeText">
+                    Click "Get New Joke" to start laughing!
+                </div>
+                <div class="joke-category" id="jokeCategory"></div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="get-joke-btn" id="getJokeBtn">
+                <span>🎲 Get New Joke</span>
+                <div class="ripple"></div>
+            </button>
+            <button class="favorite-btn" id="favoriteBtn" style="display: none;">
+                <span>❤️ Save Favorite</span>
+            </button>
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <span class="stat-number" id="totalJokes">0</span>
+                <span class="stat-label">Total Jokes</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" id="jokesSeen">0</span>
+                <span class="stat-label">Jokes Seen</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" id="favorites">0</span>
+                <span class="stat-label">Favorites</span>
+            </div>
+        </div>
+
+        <div class="loading" id="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Finding the perfect joke...</p>
+        </div>
+    </div>
+
+    <script src="scripts.js"></script>
+</body>
+</html>
