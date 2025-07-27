@@ -1,3 +1,5 @@
+# .github/workflows/ci.yml
+
 name: Full Infra + App CI/CD
 
 on:
@@ -6,14 +8,14 @@ on:
       - main
 
 env:
-  AWS_REGION:    ap-south-1
-  TF_BUCKET:     my-tf-state-bucket-rex-2025
-  TF_DDB_TABLE:  my-tf-lock-table-rex-2025
-  APP_NAME:      jokes-app
-  ECR_REPOSITORY: jokes-app
-  ECS_CLUSTER:    jokes-app-cluster
-  ECS_SERVICE:    jokes-app-service
-  IMAGE_TAG:      latest
+  AWS_REGION:       ap-south-1
+  TF_BUCKET:        my-tf-state-bucket-rex-2025
+  TF_DDB_TABLE:     my-tf-lock-table-rex-2025
+  APP_NAME:         jokes-app
+  ECR_REPOSITORY:   jokes-app
+  ECS_CLUSTER:      jokes-app-cluster
+  ECS_SERVICE:      jokes-app-service
+  IMAGE_TAG:        latest
 
 jobs:
   deploy:
@@ -21,7 +23,8 @@ jobs:
 
     steps:
     # 1) Checkout & AWS Credentials
-    - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
@@ -34,7 +37,9 @@ jobs:
     - name: Ensure S3 State Bucket exists
       run: |
         if ! aws s3api head-bucket --bucket "$TF_BUCKET" 2>/dev/null; then
-          aws s3api create-bucket --bucket "$TF_BUCKET" --region "$AWS_REGION" \
+          aws s3api create-bucket \
+            --bucket "$TF_BUCKET" \
+            --region "$AWS_REGION" \
             --create-bucket-configuration LocationConstraint="$AWS_REGION"
           aws s3api put-bucket-versioning \
             --bucket "$TF_BUCKET" \
@@ -57,32 +62,83 @@ jobs:
       with:
         terraform_version: 1.7.5
 
-    # 4) Terraform Init & Apply (Main Infra)
-    - name: Terraform Init & Apply
+    # 4) Terraform Init
+    - name: Terraform Init
       working-directory: Infrastructure
       run: |
         terraform init \
           -backend-config="bucket=$TF_BUCKET" \
-          -backend-config="key=$APP_NAME/terraform.tfstate" \
+          -backend-config="key=${APP_NAME}/terraform.tfstate" \
           -backend-config="region=$AWS_REGION" \
           -backend-config="dynamodb_table=$TF_DDB_TABLE"
-        terraform apply -auto-approve
 
-    # 5) Login to ECR
+    # 5) Auto‑import existing resources into state
+    - name: Auto‑import existing resources
+      working-directory: Infrastructure
+      run: |
+        set -e
+
+        auto_import() {
+          ADDRESS=$1
+          AWS_CMD="$2"
+          if ! terraform state list | grep -Fxq "$ADDRESS"; then
+            RESOURCE_ID=$(bash -c "$AWS_CMD" 2>/dev/null || echo "")
+            if [ -n "$RESOURCE_ID" ]; then
+              echo "Importing $ADDRESS => $RESOURCE_ID"
+              terraform import "$ADDRESS" "$RESOURCE_ID"
+            else
+              echo "AWS resource for $ADDRESS not found; skipping import"
+            fi
+          else
+            echo "$ADDRESS already in state; skipping import"
+          fi
+        }
+
+        # ECR repository
+        auto_import aws_ecr_repository.app_ecr_repo \
+          "aws ecr describe-repositories --repository-names $APP_NAME --query 'repositories[0].repositoryUri' --output text"
+
+        # ECS task execution role
+        auto_import aws_iam_role.ecs_task_execution_role \
+          "echo ${APP_NAME}-ecs-task-exec-role"
+
+        # ALB
+        auto_import aws_lb.main_alb \
+          "aws elbv2 describe-load-balancers --names ${APP_NAME}-alb --query 'LoadBalancers[0].LoadBalancerArn' --output text"
+
+        # Target Group
+        auto_import aws_lb_target_group.app_tg \
+          "aws elbv2 describe-target-groups --names ${APP_NAME}-tg --query 'TargetGroups[0].TargetGroupArn' --output text"
+
+        # CloudWatch Log Group
+        auto_import aws_cloudwatch_log_group.ecs_log_group \
+          "echo /ecs/${APP_NAME}"
+
+        # IAM logging policy
+        auto_import aws_iam_policy.ecs_logging_policy \
+          "aws iam list-policies --scope Local --query \"Policies[?PolicyName=='ecs-logging-policy'].Arn | [0]\" --output text"
+
+    # 6) Terraform Apply
+    - name: Terraform Apply
+      working-directory: Infrastructure
+      run: terraform apply -auto-approve
+
+    # 7) Log in to Amazon ECR
     - name: Log in to Amazon ECR
       uses: aws-actions/amazon-ecr-login@v2
 
-    # 6) Build & Push Docker Image
+    # 8) Build, Tag & Push Docker Image
     - name: Build, Tag & Push Docker Image
       working-directory: "Web-App (Jokes Site)"
       run: |
         ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
         IMAGE_URI="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
+        echo "Pushing image $IMAGE_URI"
         docker build -t $IMAGE_URI .
         docker push $IMAGE_URI
 
-    # 7) Update ECS Service
-    - name: Deploy to ECS
+    # 9) Deploy New Image to ECS
+    - name: Update ECS Service
       run: |
         aws ecs update-service \
           --cluster "$ECS_CLUSTER" \
