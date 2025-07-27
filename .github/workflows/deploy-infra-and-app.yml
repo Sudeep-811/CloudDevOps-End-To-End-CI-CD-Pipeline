@@ -27,7 +27,7 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-        
+
     - name: Install Terraform
       uses: hashicorp/setup-terraform@v3
       with:
@@ -72,7 +72,7 @@ jobs:
         IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
         echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
         cd "Web-App (Jokes Site)"
-        docker build -t $IMAGE_URI "./Web-App (Jokes Site)"   
+        docker build -t $IMAGE_URI .  
         docker push $IMAGE_URI
 
     ######################################
