@@ -174,7 +174,7 @@ resource "aws_lb" "main_alb" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb_sg.id]
   subnets            = [for subnet in aws_subnet.public_subnets : subnet.id]
-
+  depends_on = [aws_security_group.alb_sg]
   tags = {
     Name = "${var.app_name}-alb"
   }
