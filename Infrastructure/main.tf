@@ -65,7 +65,7 @@ resource "aws_route_table_association" "public_assoc" {
 # --- NAT and private connection ---
 
 resource "aws_eip" "nat_eip" {
-  vpc = true
+ 
 }
 
 resource "aws_nat_gateway" "nat_gw" {
