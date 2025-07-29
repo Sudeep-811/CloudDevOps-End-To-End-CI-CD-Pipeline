@@ -90,6 +90,8 @@ jobs:
           fi
         }
 
+        terraform init
+
         # ECR repository (import by name)
         auto_import aws_ecr_repository.app_ecr_repo \
           "echo $APP_NAME"
@@ -106,9 +108,9 @@ jobs:
         auto_import aws_lb_target_group.app_tg \
           "aws elbv2 describe-target-groups --names ${APP_NAME}-tg --query 'TargetGroups[0].TargetGroupArn' --output text"
 
-        # CloudWatch Log Group (import by exact name if it exists)
+        # CloudWatch Log Group
         auto_import aws_cloudwatch_log_group.ecs_log_group \
-          "aws logs describe-log-groups --log-group-name-prefix /ecs/${APP_NAME} --query \"logGroups[?logGroupName=='/ecs/${APP_NAME}'].logGroupName | [0]\" --output text"
+          "aws logs describe-log-groups --log-group-name-prefix jokes-app-log-group --query \"logGroups[?logGroupName=='jokes-app-log-group'].logGroupName | [0]\" --output text"
 
         # IAM logging policy
         auto_import aws_iam_policy.ecs_logging_policy \
