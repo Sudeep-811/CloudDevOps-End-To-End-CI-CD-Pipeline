@@ -268,7 +268,7 @@ resource "aws_ecs_task_definition" "app_task" {
     logConfiguration = {
       logDriver = "awslogs"
       options = {
-        awslogs-group         = "/ecs/${var.app_name}"
+        awslogs-group         = "/ecs/${var.app_name}" 
         awslogs-region        = "ap-south-1"
         awslogs-stream-prefix = var.app_name
       }
@@ -335,7 +335,7 @@ resource "aws_appautoscaling_policy" "cpu_policy" {
 # --- Cloudwatch logs ---
 
 resource "aws_cloudwatch_log_group" "ecs_log_group" {
-  name = "${var.app_name}-log-group"
+  name = "/ecs/${var.app_name}"
 
   retention_in_days = 7
 }
