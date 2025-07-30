@@ -1,14 +1,18 @@
-name: 🚨 Destroy All Infra
+name: Destroy All Infra
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - destroy   
 
 jobs:
   destroy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout main branch
         uses: actions/checkout@v3
+        with:
+          ref: main
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
