@@ -1,66 +1,55 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-set -e  # Exit immediately if a command exits with a non-zero status
+### CONFIGURATION — adjust as needed ###
+AWS_REGION="ap-south-1"
+TF_BUCKET="my-tf-state-bucket-rex-2025"
+TF_DDB_TABLE="my-tf-lock-table-rex-2025"
+APP_NAME="jokes-app"
 
-# Set your variables
-BUCKET_NAME="my-tf-state-bucket-rex-2025"
-TABLE_NAME="my-tf-state-bucket-rex-2025"
-STATE_KEY="jokes-app/terraform.tfstate"
-REGION="ap-south-1"
+### 1) Terraform destroy ###
+echo "➡️ Initializing Terraform backend…"
+cd Infrastructure
+terraform init \
+  -backend-config="bucket=${TF_BUCKET}" \
+  -backend-config="key=${APP_NAME}/terraform.tfstate" \
+  -backend-config="region=${AWS_REGION}" \
+  -backend-config="dynamodb_table=${TF_DDB_TABLE}"
 
-echo "🧨 Destroying all infrastructure except the backend (S3 & DynamoDB)..."
-terraform destroy -target="null_resource.dummy" -auto-approve  # placeholder
+echo "🧨 Destroying all Terraform resources…"
+terraform destroy -auto-approve
 
-# Remove everything except backend
-terraform destroy \
-  -auto-approve \
-  -target=module.vpc \
-  -target=aws_ecs_service.jokes_app_service \
-  -target=aws_ecs_task_definition.jokes_app_task \
-  -target=aws_lb.jokes_alb \
-  -target=aws_lb_target_group.jokes_tg \
-  -target=aws_lb_listener.jokes_listener \
-  -target=aws_security_group.* \
-  -target=aws_iam_role.* \
-  -target=aws_cloudwatch_log_group.* \
-  -target=aws_ecr_repository.* \
-  -target=aws_subnet.* \
-  -target=aws_route_table.* \
-  -target=aws_internet_gateway.* \
-  -target=aws_nat_gateway.* \
-  -target=aws_route_table_association.* \
-  -target=aws_vpc.* \
-  -target=aws_eip.*
+### 2) Empty and delete the S3 bucket (including all versions) ###
+echo "🗑️ Emptying versioned S3 bucket: ${TF_BUCKET}"
+# List and delete all object versions and delete markers
+VERSIONS_JSON=$(aws s3api list-object-versions --bucket "${TF_BUCKET}" --output json)
 
-echo "✅ Infra resources destroyed. Proceeding to backend cleanup..."
-sleep 3
+# Build a delete list for both versions and delete markers
+to_delete=$(jq -r '
+  [ .Versions[], .DeleteMarkers[] ]
+  | map({Key:.Key, VersionId:.VersionId})
+  | {Objects: .}
+' <<<"${VERSIONS_JSON}")
 
-# Now remove backend items
-
-echo "🗑 Deleting Terraform lock from DynamoDB..."
-aws dynamodb delete-item \
-  --table-name $TABLE_NAME \
-  --key "{\"LockID\": {\"S\": \"$STATE_KEY\"}}" \
-  --region $REGION
-
-echo "🧼 Cleaning up all object versions in S3 bucket: $BUCKET_NAME"
-# Remove all versions & delete markers
-VERSIONS=$(aws s3api list-object-versions --bucket $BUCKET_NAME --region $REGION \
-           --query='Versions[].{Key:Key,VersionId:VersionId}' --output text)
-
-DELETES=$(echo "$VERSIONS" | while read -r key versionId; do
-  echo "{\"Key\":\"$key\",\"VersionId\":\"$versionId\"},"
-done | sed '$ s/,$//')
-
-if [ -n "$DELETES" ]; then
-  aws s3api delete-objects --bucket $BUCKET_NAME --region $REGION \
-    --delete "{\"Objects\":[$DELETES]}"
+# If there’s anything to delete, send to S3
+if [[ $(jq '.Objects | length' <<<"${to_delete}") -gt 0 ]]; then
+  aws s3api delete-objects \
+    --bucket "${TF_BUCKET}" \
+    --delete "${to_delete}"
+  echo "✅ All object versions deleted."
+else
+  echo "⚠️ No object versions or delete markers found."
 fi
 
-echo "🪣 Deleting S3 bucket..."
-aws s3api delete-bucket --bucket $BUCKET_NAME --region $REGION
+echo "🧨 Deleting the S3 bucket ${TF_BUCKET}"
+aws s3api delete-bucket --bucket "${TF_BUCKET}" --region "${AWS_REGION}"
+echo "✅ Bucket deleted."
 
-echo "📦 Deleting DynamoDB table..."
-aws dynamodb delete-table --table-name $TABLE_NAME --region $REGION
+### 3) Delete the DynamoDB lock table ###
+echo "🗑️ Deleting DynamoDB table: ${TF_DDB_TABLE}"
+aws dynamodb delete-table \
+  --table-name "${TF_DDB_TABLE}" \
+  --region "${AWS_REGION}"
+echo "✅ DynamoDB table deleted."
 
-echo "✅ All infrastructure and backend deleted successfully!"
+echo "🎉 All resources torn down successfully!"
