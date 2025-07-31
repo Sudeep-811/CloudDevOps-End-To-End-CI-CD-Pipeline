@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-### CONFIGURATION — adjust as needed ###
+# First arg is the path to Terraform code
+INFRA_DIR="${1:-Infrastructure}"
+
 AWS_REGION="ap-south-1"
 TF_BUCKET="my-tf-state-bucket-rex-2025"
 TF_DDB_TABLE="my-tf-lock-table-rex-2025"
 APP_NAME="jokes-app"
 
-### 1) Terraform destroy ###
 echo "➡️ Initializing Terraform backend…"
-cd Infrastructure
+cd "$INFRA_DIR"
 terraform init \
   -backend-config="bucket=${TF_BUCKET}" \
   -backend-config="key=${APP_NAME}/terraform.tfstate" \
@@ -18,6 +19,9 @@ terraform init \
 
 echo "🧨 Destroying all Terraform resources…"
 terraform destroy -auto-approve
+
+# ... then S3 & DynamoDB cleanup as before ...
+
 
 ### 2) Empty and delete the S3 bucket (including all versions) ###
 echo "🗑️ Emptying versioned S3 bucket: ${TF_BUCKET}"
