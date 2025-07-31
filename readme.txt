@@ -1,0 +1,1 @@
+This is to destroy whole infrastructure with a single push.
