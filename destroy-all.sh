@@ -10,12 +10,33 @@ TF_DDB_TABLE="my-tf-lock-table-rex-2025"
 APP_NAME="jokes-app"
 
 # ─── Pre-cleanup: delete *all* images in ECR so the repo is empty ───
+# ─── Pre-cleanup: delete *all* images in ECR so the repo is empty ───
 echo "🗑️ Purging all images from ECR repo: ${APP_NAME}"
-IMAGE_IDS_JSON=$(aws ecr list-images \
-  --repository-name "${APP_NAME}" \
-  --region "${AWS_REGION}" \
-  --query 'imageIds' \
-  --output json)
+
+if aws ecr describe-repositories \
+     --repository-names "${APP_NAME}" \
+     --region "${AWS_REGION}" >/dev/null 2>&1; then
+
+  IMAGE_IDS_JSON=$(aws ecr list-images \
+    --repository-name "${APP_NAME}" \
+    --region "${AWS_REGION}" \
+    --query 'imageIds' \
+    --output json)
+
+  if [[ "$(echo "${IMAGE_IDS_JSON}" | jq length)" -gt 0 ]]; then
+    aws ecr batch-delete-image \
+      --repository-name "${APP_NAME}" \
+      --region "${AWS_REGION}" \
+      --image-ids "${IMAGE_IDS_JSON}"
+    echo "✅ Deleted all images."
+  else
+    echo "ℹ️ No images to delete."
+  fi
+
+else
+  echo "⚠️ ECR repo ${APP_NAME} not found; skipping image purge."
+fi
+
 
 if [[ "$(echo "${IMAGE_IDS_JSON}" | jq length)" -gt 0 ]]; then
   aws ecr batch-delete-image \
