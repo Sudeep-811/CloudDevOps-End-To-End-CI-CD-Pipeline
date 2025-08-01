@@ -14,7 +14,7 @@ if (!fs.existsSync(publicDir)) {
 const envPath = path.join(__dirname, '.env');
 if (!fs.existsSync(envPath)) {
     const envContent = `# JokeMaster Configuration
-PORT=3000
+PORT=5000
 DB_PATH=./jokes.db
 NODE_ENV=development
 
@@ -165,11 +165,11 @@ COPY . .
 RUN mkdir -p public
 
 # Expose port
-EXPOSE 3000
+EXPOSE 5000
 
 # Add healthcheck
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\
-  CMD curl -f http://localhost:3000/api/stats || exit 1
+  CMD curl -f http://localhost:5000/api/stats || exit 1
 
 # Start the application
 CMD ["npm", "start"]
@@ -188,15 +188,15 @@ services:
   jokemaster:
     build: .
     ports:
-      - "3000:3000"
+      - "5000:5000"
     environment:
       - NODE_ENV=production
-      - PORT=3000
+      - PORT=5000
     volumes:
       - ./jokes.db:/app/jokes.db
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/stats"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/stats"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -224,7 +224,7 @@ if (!fs.existsSync(nginxConfPath)) {
     server_name localhost;
 
     location / {
-        proxy_pass http://jokemaster:3000;
+        proxy_pass http://jokemaster:5000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -249,5 +249,5 @@ console.log('   - Move styles.css to public/styles.css');
 console.log('   - Move script.js to public/script.js');
 console.log('\n2. Install dependencies: npm install');
 console.log('3. Start the server: npm start');
-console.log('4. Visit http://localhost:3000');
+console.log('4. Visit http://localhost:5000');
 console.log('\n🚀 Happy coding and keep the jokes coming! 😄');
