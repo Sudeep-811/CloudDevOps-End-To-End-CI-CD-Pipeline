@@ -57,3 +57,4 @@ aws dynamodb delete-table \
 echo "✅ DynamoDB table deleted."
 
 echo "🎉 All resources torn down successfully!"
+#
