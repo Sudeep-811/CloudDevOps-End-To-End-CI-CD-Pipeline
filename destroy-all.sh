@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# First arg is the path to Terraform code
+# First arg is the path to your Terraform infra directory
 INFRA_DIR="${1:-Infrastructure}"
 
 AWS_REGION="ap-south-1"
@@ -26,9 +26,11 @@ if [[ "$(echo "${IMAGE_IDS_JSON}" | jq length)" -gt 0 ]]; then
 else
   echo "ℹ️ No images to delete."
 fi
+
 # ─── Terraform destroy: clean up all resources ───
 echo "➡️ Initializing Terraform backend…"
 cd "$INFRA_DIR"
+
 terraform init \
   -backend-config="bucket=${TF_BUCKET}" \
   -backend-config="key=${APP_NAME}/terraform.tfstate" \
@@ -38,41 +40,40 @@ terraform init \
 echo "🧨 Destroying all Terraform resources…"
 terraform destroy -auto-approve
 
-# ... then S3 & DynamoDB cleanup as before ...
-
-
-### 2) Empty and delete the S3 bucket (including all versions) ###
+# ─── 2) Empty and delete the S3 bucket (including all versions) ───
 echo "🗑️ Emptying versioned S3 bucket: ${TF_BUCKET}"
-# List and delete all object versions and delete markers
-VERSIONS_JSON=$(aws s3api list-object-versions --bucket "${TF_BUCKET}" --output json)
-
-# Build a delete list for both versions and delete markers
-to_delete=$(jq -r '
-  [ .Versions[], .DeleteMarkers[] ]
-  | map({Key:.Key, VersionId:.VersionId})
-  | {Objects: .}
-' <<<"${VERSIONS_JSON}")
-
-# If there’s anything to delete, send to S3
-if [[ $(jq '.Objects | length' <<<"${to_delete}") -gt 0 ]]; then
-  aws s3api delete-objects \
-    --bucket "${TF_BUCKET}" \
-    --delete "${to_delete}"
-  echo "✅ All object versions deleted."
+if ! aws s3api head-bucket --bucket "${TF_BUCKET}" 2>/dev/null; then
+  echo "⚠️ Bucket ${TF_BUCKET} not found or already deleted—skipping."
 else
-  echo "⚠️ No object versions or delete markers found."
+  VERSIONS_JSON=$(aws s3api list-object-versions --bucket "${TF_BUCKET}" --output json)
+
+  # Build a safe delete payload even if Versions or DeleteMarkers are null
+  to_delete=$(jq -nc --argjson v "$VERSIONS_JSON" '
+    ($v.Versions // []) + ($v.DeleteMarkers // [])
+    | map({Key:.Key, VersionId:.VersionId})
+    | {Objects: ., Quiet: false}
+  ')
+
+  if [[ $(jq '.Objects | length' <<<"$to_delete") -gt 0 ]]; then
+    aws s3api delete-objects \
+      --bucket "${TF_BUCKET}" \
+      --delete "$to_delete"
+    echo "✅ Deleted all object versions and delete markers."
+  else
+    echo "ℹ️ No object versions or delete markers found."
+  fi
+
+  echo "🧨 Deleting the S3 bucket ${TF_BUCKET}"
+  aws s3api delete-bucket --bucket "${TF_BUCKET}" --region "${AWS_REGION}"
+  echo "✅ Bucket deleted."
 fi
 
-echo "🧨 Deleting the S3 bucket ${TF_BUCKET}"
-aws s3api delete-bucket --bucket "${TF_BUCKET}" --region "${AWS_REGION}"
-echo "✅ Bucket deleted."
-
-### 3) Delete the DynamoDB lock table ###
+# ─── 3) Delete the DynamoDB lock table ───
 echo "🗑️ Deleting DynamoDB table: ${TF_DDB_TABLE}"
 aws dynamodb delete-table \
   --table-name "${TF_DDB_TABLE}" \
-  --region "${AWS_REGION}"
+  --region "${AWS_REGION}" \
+  2>/dev/null || echo "⚠️ Table ${TF_DDB_TABLE} not found or already deleted."
 echo "✅ DynamoDB table deleted."
 
 echo "🎉 All resources torn down successfully!"
-#
