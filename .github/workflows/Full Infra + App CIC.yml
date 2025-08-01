@@ -67,53 +67,55 @@ jobs:
           -backend-config="key=${APP_NAME}/terraform.tfstate" \
           -backend-config="region=$AWS_REGION" \
           -backend-config="dynamodb_table=$TF_DDB_TABLE"
-          # 5) Auto-import existing resources
-          - name: Auto-import existing resources
-            working-directory: Infrastructure
-            run: |
-            set -e
 
-            auto_import() {
-              ADDRESS=$1
-              AWS_CMD="$2"
-              if ! terraform state list | grep -Fxq "$ADDRESS"; then
-              RESOURCE_ID=$(bash -c "$AWS_CMD" 2>/dev/null || echo "")
-              if [ -n "$RESOURCE_ID" ] && [ "$RESOURCE_ID" != "None" ]; then
-                echo "Importing $ADDRESS => $RESOURCE_ID"
-                terraform import "$ADDRESS" "$RESOURCE_ID"
-              else
-                echo "Skipping import of $ADDRESS (resource not found)"
-              fi
-              else
-              echo "$ADDRESS already in state; skipping import"
-              fi
-            }
+    # 5) Auto-import existing resources
+    - name: Auto-import existing resources
+      working-directory: Infrastructure
+      run: |
+        set -e
 
-            terraform init
+        auto_import() {
+          ADDRESS=$1
+          AWS_CMD="$2"
+          if ! terraform state list | grep -Fxq "$ADDRESS"; then
+            RESOURCE_ID=$(bash -c "$AWS_CMD" 2>/dev/null || echo "")
+            if [ -n "$RESOURCE_ID" ] && [ "$RESOURCE_ID" != "None" ]; then
+              echo "Importing $ADDRESS => $RESOURCE_ID"
+              terraform import "$ADDRESS" "$RESOURCE_ID"
+            else
+              echo "Skipping import of $ADDRESS (resource not found)"
+            fi
+          else
+            echo "$ADDRESS already in state; skipping import"
+          fi
+        }
 
-            # 1) ECR repository
-            auto_import aws_ecr_repository.app_ecr_repo \
-              "aws ecr describe-repositories --repository-names ${APP_NAME} --query 'repositories[0].repositoryName' --output text"
+        terraform init
 
-            # 2) ECS task execution role
-            auto_import aws_iam_role.ecs_task_execution_role \
-              "aws iam get-role --role-name ${APP_NAME}-ecs-task-exec-role --query 'Role.RoleName' --output text"
+        # 1) ECR repository
+        auto_import aws_ecr_repository.app_ecr_repo \
+          "aws ecr describe-repositories --repository-names ${APP_NAME} --query 'repositories[0].repositoryName' --output text"
 
-            # 3) ALB
-            auto_import aws_lb.main_alb \
-              "aws elbv2 describe-load-balancers --names ${APP_NAME}-alb --query 'LoadBalancers[0].LoadBalancerArn' --output text"
+        # 2) ECS task execution role
+        auto_import aws_iam_role.ecs_task_execution_role \
+          "aws iam get-role --role-name ${APP_NAME}-ecs-task-exec-role --query 'Role.RoleName' --output text"
 
-            # 4) Target Group
-            auto_import aws_lb_target_group.app_tg \
-              "aws elbv2 describe-target-groups --names ${APP_NAME}-tg --query 'TargetGroups[0].TargetGroupArn' --output text"
+        # 3) ALB
+        auto_import aws_lb.main_alb \
+          "aws elbv2 describe-load-balancers --names ${APP_NAME}-alb --query 'LoadBalancers[0].LoadBalancerArn' --output text"
 
-            # 5) CloudWatch Log Group
-            auto_import aws_cloudwatch_log_group.ecs_log_group \
-              "aws logs describe-log-groups --log-group-name-prefix /ecs/${APP_NAME} --query \"logGroups[?logGroupName=='/ecs/${APP_NAME}'].logGroupName | [0]\" --output text"
+        # 4) Target Group
+        auto_import aws_lb_target_group.app_tg \
+          "aws elbv2 describe-target-groups --names ${APP_NAME}-tg --query 'TargetGroups[0].TargetGroupArn' --output text"
 
-            # 6) IAM logging policy
-            auto_import aws_iam_policy.ecs_logging_policy \
-              "aws iam list-policies --scope Local --query \"Policies[?PolicyName=='ecs-logging-policy'].Arn | [0]\" --output text"
+        # 5) CloudWatch Log Group
+        auto_import aws_cloudwatch_log_group.ecs_log_group \
+          "aws logs describe-log-groups --log-group-name-prefix /ecs/${APP_NAME} --query \"logGroups[?logGroupName=='/ecs/${APP_NAME}'].logGroupName | [0]\" --output text"
+
+        # 6) IAM logging policy
+        auto_import aws_iam_policy.ecs_logging_policy \
+          "aws iam list-policies --scope Local --query \"Policies[?PolicyName=='ecs-logging-policy'].Arn | [0]\" --output text"
+    
     # 6) Terraform Apply
     - name: Terraform Apply
       working-directory: Infrastructure
